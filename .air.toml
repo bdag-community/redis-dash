@@ -1,0 +1,21 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/ben-dash ."
+full_bin = "BDAG_DASHBOARD_TIMEZONE=Africa/Johannesburg ./tmp/ben-dash"
+include_ext = ["go"]
+exclude_dir = ["tmp", ".git"]
+delay = 1000
+stop_on_error = true
+send_interrupt = true
+kill_delay = 500
+
+[log]
+time = true
+
+[misc]
+clean_on_exit = true
+
+[screen]
+clear_on_rebuild = true
