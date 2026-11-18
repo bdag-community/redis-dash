@@ -242,7 +242,7 @@ func TestPoolStatusShowsTemplateUnsafeSeparateFromSyncedNode(t *testing.T) {
 				},
 			},
 			"sync_progress": map[string]any{
-				"status": "synced",
+				"status": "synced", "native_is_current": true, "eth_syncing": false,
 			},
 			"template_safety": map[string]any{
 				"template_coinbase_valid":                     false,
@@ -262,8 +262,8 @@ func TestPoolStatusShowsTemplateUnsafeSeparateFromSyncedNode(t *testing.T) {
 	}
 
 	view := app.poolStatus(context.Background())
-	if view.Node.State != "" {
-		t.Fatalf("pool status should not attach synthetic node state, got %q", view.Node.State)
+	if view.Node.State != "Synced" {
+		t.Fatalf("node sync state = %q, want Synced independently of pool readiness", view.Node.State)
 	}
 	if view.State != "Mining Degraded" {
 		t.Fatalf("pool status state = %q, want Mining Degraded", view.State)

@@ -12,7 +12,7 @@ const indexTemplate = `
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="/static/htmx-2.0.4.min.js"></script>
   <style>
     :root {
       color-scheme: dark;
@@ -1023,7 +1023,7 @@ const indexTemplate = `
       <div class="sidebar-footer">
         <div class="system-card">
           <strong><span class="status-pip"></span> Local stack online</strong>
-          {{with .StackReleaseTag}}<span>Release {{.}}</span>{{end}}
+          {{with .StackReleaseTag}}<span>{{.}}</span>{{end}}
           <span>Live mining monitor</span>
         </div>
       </div>
@@ -1148,7 +1148,7 @@ const indexTemplate = `
       if (window.refreshLiveTab) window.refreshLiveTab();
     });
 
-    const liveUpdatePending = {status: false, nodeStatus: false, poolStatus: false, logs: false, poolEarnings: false, global: false, stratumRuntime: false, chainDAG: false};
+    const liveUpdatePending = {status: false, logs: false, poolEarnings: false, global: false, stratumRuntime: false, chainDAG: false};
     function activeLiveTab() {
       return document.getElementById("tab-content")?.dataset.liveTab || "";
     }
@@ -1224,25 +1224,6 @@ const indexTemplate = `
       const rows = Array.isArray(groups) ? groups : [];
       return rows.map((group) => {
         return '<section class="panel panel-feature center-stack"><h2 class="section-title">' + escapeHTML(group.title) + '</h2><div style="width: 100%; max-width: 920px;"><div class="metric-grid">' + metricCardsHTML(group.items) + '</div></div></section>';
-      }).join("");
-    }
-    function poolStatusGroupsHTML(groups) {
-      const rows = Array.isArray(groups) ? groups : [];
-      return rows.map((group) => {
-        return '<section class="panel"><h3 class="overview-card-title">' + escapeHTML(group.title) + '</h3><div class="metric-grid pool-status-grid overview-metrics-grid">' + metricCardsHTML(group.items) + '</div></section>';
-      }).join("");
-    }
-    function evidenceGroupCardsHTML(groups) {
-      const rows = Array.isArray(groups) ? groups : [];
-      return rows.map((group) => {
-        return '<section class="panel"><h3 class="overview-card-title">' + escapeHTML(group.title) + '</h3><div class="metric-grid overview-metrics-grid">' + metricCardsHTML(group.items) + '</div></section>';
-      }).join("");
-    }
-    function statusMinerRowsHTML(rows) {
-      const data = Array.isArray(rows) ? rows : [];
-      if (!data.length) return '<tr><td class="muted" colspan="5" style="padding: 18px 12px;">No miner rows in API payload.</td></tr>';
-      return data.map((row) => {
-        return '<tr><td style="font-weight: 600;">' + escapeHTML(row.mac) + '</td><td>' + escapeHTML(row.observed) + '</td><td>' + escapeHTML(row.status) + '</td><td class="num">' + escapeHTML(row.shares) + '</td><td>' + escapeHTML(row.last) + '</td></tr>';
       }).join("");
     }
     function asicDetailItem(label, value) {
@@ -1351,6 +1332,84 @@ const indexTemplate = `
         window.asicPerformanceSeries = parseASICPerformanceSeries(el ? el.textContent : "[]");
       }
       return window.asicPerformanceSeries;
+    }
+    function drawSmoothPath(ctx, points) {
+      if (!points.length) return;
+      ctx.moveTo(points[0].x, points[0].y);
+      if (points.length === 1) return;
+      if (points.length === 2) {
+        ctx.lineTo(points[1].x, points[1].y);
+        return;
+      }
+      for (let i = 0; i < points.length - 1; i++) {
+        const p0 = points[Math.max(0, i - 1)];
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const p3 = points[Math.min(points.length - 1, i + 2)];
+        const tension = 0.05;
+        const cp1x = p1.x + (p2.x - p0.x) * tension;
+        const cp1y = p1.y + (p2.y - p0.y) * tension;
+        const cp2x = p2.x - (p3.x - p1.x) * tension;
+        const cp2y = p2.y - (p3.y - p1.y) * tension;
+        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+      }
+    }
+    function niceAxisMax(value) {
+      const raw = Math.max(Number(value) || 1, 1);
+      const exponent = Math.floor(Math.log10(raw));
+      const base = Math.pow(10, exponent);
+      const normalized = raw / base;
+      const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+      return nice * base;
+    }
+    function producerTrendXTicks(minT, maxT, rangeHours) {
+      if (!Number.isFinite(minT) || !Number.isFinite(maxT) || maxT <= minT) return [];
+      const spanHours = (maxT - minT) / (60 * 60 * 1000);
+      if (spanHours >= 720 || rangeHours >= 720) return evenlySpacedTimeTicks(minT, maxT, 4, "date");
+      if (spanHours >= 168 || rangeHours >= 168) return dayTimeTicks(minT, maxT);
+      if (spanHours >= 24 || rangeHours === 24) return intervalTimeTicks(minT, maxT, 2 * 60 * 60 * 1000, "time");
+      return intervalTimeTicks(minT, maxT, 15 * 60 * 1000, "time");
+    }
+    function intervalTimeTicks(minT, maxT, stepMs, format) {
+      const out = [];
+      const start = Math.ceil(minT / stepMs) * stepMs;
+      for (let t = start; t <= maxT + 1; t += stepMs) {
+        out.push({t, label: formatTimeTick(t, format)});
+      }
+      if (out.length <= 2) {
+        return evenlySpacedTimeTicks(minT, maxT, 4, format);
+      }
+      return out;
+    }
+    function dayTimeTicks(minT, maxT) {
+      const out = [];
+      const dayMs = 24 * 60 * 60 * 1000;
+      const startDate = new Date(minT);
+      const start = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 1).getTime();
+      for (let t = start; t <= maxT + 1; t += dayMs) {
+        out.push({t, label: formatTimeTick(t, "day")});
+      }
+      if (!out.length) out.push(...evenlySpacedTimeTicks(minT, maxT, 4, "day"));
+      return out;
+    }
+    function evenlySpacedTimeTicks(minT, maxT, divisions, format) {
+      const out = [];
+      const count = Math.max(1, divisions);
+      for (let i = 0; i <= count; i++) {
+        const t = minT + ((maxT - minT) * i / count);
+        out.push({t, label: formatTimeTick(t, format)});
+      }
+      return out;
+    }
+    function formatTimeTick(t, format) {
+      const date = new Date(t);
+      if (format === "day") {
+        return date.toLocaleDateString(undefined, {weekday: "short"});
+      }
+      if (format === "date") {
+        return date.toLocaleDateString(undefined, {month: "short", day: "numeric"});
+      }
+      return date.toLocaleTimeString(undefined, {hour: "2-digit", minute: "2-digit"});
     }
     function drawASICPerformance() {
       const canvas = document.getElementById("asicPerformanceChart");
@@ -2077,6 +2136,8 @@ const indexTemplate = `
     async function updateStatusView() {
       if (activeLiveTab() !== "status") return;
       const payload = await liveJSON("/api/live/status");
+      setHTML("#status-error", payload.api_error ? '<div class="api-error">' + escapeHTML(payload.api_error) + '</div>' : "");
+      setHTML("#overview-warnings", notesHTML(payload.warnings));
       setHTML('[data-live-steps="node"]', statusStepsHTML(payload.node?.status_steps));
       setHTML('[data-live-evidence="node"]', metricCardsHTML(payload.node?.evidence));
       setHTML('[data-live-steps="status"]', statusStepsHTML(payload.status_steps));
@@ -2087,16 +2148,6 @@ const indexTemplate = `
       }
       setHTML("#asic-device-rows", asicDeviceRowsHTML(payload.device_rows));
       if (payload.chart_json) writeASICPerformanceSeries(parseASICPerformanceSeries(payload.chart_json));
-    }
-    async function updateNodeStatusView() {
-      if (activeLiveTab() !== "overview") return;
-      const payload = await liveJSON("/api/live/node-status");
-      setHTML("#node-status-groups", evidenceGroupCardsHTML(payload.node?.groups));
-    }
-    async function updatePoolStatusView() {
-      if (activeLiveTab() !== "overview") return;
-      const payload = await liveJSON("/api/live/pool-status");
-      setHTML("#pool-status-groups", poolStatusGroupsHTML(payload.groups));
     }
     async function updateLogsView() {
       if (activeLiveTab() !== "logs") return;
@@ -2235,10 +2286,10 @@ const indexTemplate = `
 	      setHTML("#global-metrics", metricCardsHTML(payload.evidence));
 	      applyGlobalPoolEarnings(payload.pool_earnings);
 	    }
-	    const liveUpdateQueued = {status: false, nodeStatus: false, poolStatus: false, peers: false, logs: false, poolEarnings: false, global: false, stratumRuntime: false, chainDAG: false};
-	    const liveUpdateTimers = {status: 0, nodeStatus: 0, poolStatus: 0, peers: 0, logs: 0, poolEarnings: 0, global: 0, stratumRuntime: 0, chainDAG: 0};
-	    const liveUpdateLastRun = {status: 0, nodeStatus: 0, poolStatus: 0, peers: 0, logs: 0, poolEarnings: 0, global: 0, stratumRuntime: 0, chainDAG: 0};
-	    const liveUpdateMinDelay = {status: 500, nodeStatus: 1000, poolStatus: 1000, peers: 600000, logs: 1000, poolEarnings: 750, global: 750, stratumRuntime: 750, chainDAG: 2000};
+	    const liveUpdateQueued = {status: false, peers: false, logs: false, poolEarnings: false, global: false, stratumRuntime: false, chainDAG: false};
+	    const liveUpdateTimers = {status: 0, peers: 0, logs: 0, poolEarnings: 0, global: 0, stratumRuntime: 0, chainDAG: 0};
+	    const liveUpdateLastRun = {status: 0, peers: 0, logs: 0, poolEarnings: 0, global: 0, stratumRuntime: 0, chainDAG: 0};
+	    const liveUpdateMinDelay = {status: 500, peers: 600000, logs: 1000, poolEarnings: 750, global: 750, stratumRuntime: 750, chainDAG: 2000};
 	    async function runLiveUpdate(kind) {
 	      liveUpdateLastRun[kind] = Date.now();
 	      if (liveUpdatePending[kind]) {
@@ -2248,8 +2299,6 @@ const indexTemplate = `
       liveUpdatePending[kind] = true;
       try {
         if (kind === "status") await updateStatusView();
-        if (kind === "nodeStatus") await updateNodeStatusView();
-        if (kind === "poolStatus") await updatePoolStatusView();
         if (kind === "peers") await updatePeersView();
         if (kind === "logs") await updateLogsView();
         if (kind === "stratumRuntime") await updateStratumRuntimeView();
@@ -2258,6 +2307,9 @@ const indexTemplate = `
         if (kind === "global") await updateGlobalView();
       } catch (error) {
         console.error("live dashboard update failed", error);
+        if (kind === "status" && activeLiveTab() === "status") {
+          setHTML("#status-error", '<div class="api-error">Live status is unavailable; displayed data may be stale.</div>');
+        }
       } finally {
         liveUpdatePending[kind] = false;
         if (liveUpdateQueued[kind]) {
@@ -2281,10 +2333,6 @@ const indexTemplate = `
 	    window.refreshLiveTab = function () {
 	      const tab = activeLiveTab();
       if (tab === "status") void runLiveUpdate("status");
-      if (tab === "overview") {
-        void runLiveUpdate("nodeStatus");
-        void runLiveUpdate("poolStatus");
-      }
       if (tab === "peers") void runLiveUpdate("peers");
       if (tab === "logs") void runLiveUpdate("logs");
       if (tab === "stratum-runtime") void runLiveUpdate("stratumRuntime");
@@ -2295,10 +2343,6 @@ const indexTemplate = `
     function scheduleActiveLiveCatchup() {
       const tab = activeLiveTab();
       if (tab === "status") scheduleLiveUpdate("status");
-      if (tab === "overview") {
-        scheduleLiveUpdate("nodeStatus");
-        scheduleLiveUpdate("poolStatus");
-      }
       if (tab === "peers") scheduleLiveUpdate("peers");
       if (tab === "logs") scheduleLiveUpdate("logs");
       if (tab === "stratum-runtime") scheduleLiveUpdate("stratumRuntime");
@@ -2322,10 +2366,6 @@ const indexTemplate = `
 	      const tab = activeLiveTab();
 	      if (tab === "global" && (type === "global" || type === "chain-dag" || type === "chain-live" || type === "stale")) scheduleLiveUpdate("global");
 	      if (tab === "status" && ["global", "pool", "asic", "host", "stale", "dashboard"].includes(type)) scheduleLiveUpdate("status");
-	      if (tab === "overview" && ["global", "pool", "host", "stale", "dashboard"].includes(type)) {
-	        scheduleLiveUpdate("nodeStatus");
-	        scheduleLiveUpdate("poolStatus");
-	      }
 	      if (tab === "stratum-runtime" && ["pool", "asic", "stale", "dashboard"].includes(type)) scheduleLiveUpdate("stratumRuntime");
 	      if (tab === "chain-dag" && type === "chain-dag") {
 	        if (payload.full === "true") {
@@ -2470,33 +2510,21 @@ const tabTemplates = `
 {{end}}
 
 {{define "status-live"}}
-<section id="tab-content" data-live-tab="overview">
+<section id="tab-content" data-live-tab="status">
   <header class="page-header">
     <div>
       <h2 class="page-title">Overview</h2>
-      <p class="page-description">Latest node_status_log and pool_status events from runtime logs.</p>
+      <p class="page-description">Live node, pool, template, and ASIC production state.</p>
     </div>
   </header>
-  <div class="stack-lg overview-section">
-    <h2 class="overview-heading">Node Status</h2>
-    <div id="node-status-groups" class="overview-section">
-      {{range .Node.Groups}}
-      <section class="panel">
-        <h3 class="overview-card-title">{{.Title}}</h3>
-        <div class="metric-grid overview-metrics-grid">{{template "evidence-cards" .Items}}</div>
-      </section>
-      {{end}}
-    </div>
-    <h2 class="overview-heading">Pool Status</h2>
-    <div id="pool-status-groups" class="overview-section">
-      {{range .Groups}}
-      <section class="panel">
-        <h3 class="overview-card-title">{{.Title}}</h3>
-        <div class="metric-grid pool-status-grid overview-metrics-grid">{{template "evidence-cards" .Items}}</div>
-      </section>
-      {{end}}
-    </div>
+  <div id="status-error">{{if .APIError}}<div class="api-error" style="margin-bottom: 16px;">{{.APIError}}</div>{{end}}</div>
+  <div class="stack-lg overview-status-stack">
+    {{template "status-panel" .Node}}
+    {{template "status-ladder" .}}
   </div>
+  <div id="overview-warnings" aria-live="polite">{{range .Warnings}}<div class="muted" style="margin-top: 10px; font-size: 0.82rem;">{{.}}</div>{{end}}</div>
+  <div data-live-groups="status">{{template "evidence-groups" .Groups}}</div>
+  {{template "asic-performance-panel" .}}
 </section>
 {{end}}
 
@@ -2716,7 +2744,7 @@ const tabTemplates = `
         </div>
         <div class="field"><label>Pool URL</label><input name="pool_url" value="{{.DefaultPoolURL}}" autocomplete="off" {{if not .Enabled}}disabled{{end}}></div>
         <div class="field"><label>Worker / Wallet</label><input name="worker_user" value="{{.DefaultWorkerUser}}" autocomplete="off" {{if not .Enabled}}disabled{{end}}></div>
-        <div class="field"><label>Pool Password</label><input name="pool_password" value="{{.DefaultPoolPassword}}" autocomplete="off" {{if not .Enabled}}disabled{{end}}></div>
+        <div class="field"><label>Pool Password</label><input name="pool_password" type="password" placeholder="Leave blank for the configured default" autocomplete="off" {{if not .Enabled}}disabled{{end}}></div>
         <div class="field"><label>ASIC Admin Password</label><input name="admin_password" type="password" autocomplete="current-password" {{if not .Enabled}}disabled{{end}}></div>
         <div class="field"><label>Control Token</label><input name="control_token" type="password" autocomplete="off" {{if not .Enabled}}disabled{{end}}></div>
         <label class="check-field"><input type="checkbox" name="replace_existing" value="true" {{if .ReplaceExisting}}checked{{end}} {{if not .Enabled}}disabled{{end}}> Replace other pool entries</label>
@@ -3011,35 +3039,6 @@ const tabTemplates = `
         }
       });
     };
-    function drawSmoothPath(ctx, points) {
-      if (!points.length) return;
-      ctx.moveTo(points[0].x, points[0].y);
-      if (points.length === 1) return;
-      if (points.length === 2) {
-        ctx.lineTo(points[1].x, points[1].y);
-        return;
-      }
-      for (let i = 0; i < points.length - 1; i++) {
-        const p0 = points[Math.max(0, i - 1)];
-        const p1 = points[i];
-        const p2 = points[i + 1];
-        const p3 = points[Math.min(points.length - 1, i + 2)];
-        const tension = 0.05;
-        const cp1x = p1.x + (p2.x - p0.x) * tension;
-        const cp1y = p1.y + (p2.y - p0.y) * tension;
-        const cp2x = p2.x - (p3.x - p1.x) * tension;
-        const cp2y = p2.y - (p3.y - p1.y) * tension;
-        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
-      }
-    }
-    function niceAxisMax(value) {
-      const raw = Math.max(Number(value) || 1, 1);
-      const exponent = Math.floor(Math.log10(raw));
-      const base = Math.pow(10, exponent);
-      const normalized = raw / base;
-      const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
-      return nice * base;
-    }
     function formatYAxisValue(value, metric) {
       const n = Number(value) || 0;
       if (metric === "usd") {
@@ -3054,55 +3053,6 @@ const tabTemplates = `
       if (n >= 1000) return Math.round(n / 1000) + "k";
       if (n >= 10) return Math.round(n).toString();
       return n.toFixed(1);
-    }
-    function producerTrendXTicks(minT, maxT, rangeHours) {
-      if (!Number.isFinite(minT) || !Number.isFinite(maxT) || maxT <= minT) return [];
-      const spanHours = (maxT - minT) / (60 * 60 * 1000);
-      if (spanHours >= 720 || rangeHours >= 720) return evenlySpacedTimeTicks(minT, maxT, 4, "date");
-      if (spanHours >= 168 || rangeHours >= 168) return dayTimeTicks(minT, maxT);
-      if (spanHours >= 24 || rangeHours === 24) return intervalTimeTicks(minT, maxT, 2 * 60 * 60 * 1000, "time");
-      return intervalTimeTicks(minT, maxT, 15 * 60 * 1000, "time");
-    }
-    function intervalTimeTicks(minT, maxT, stepMs, format) {
-      const out = [];
-      const start = Math.ceil(minT / stepMs) * stepMs;
-      for (let t = start; t <= maxT + 1; t += stepMs) {
-        out.push({t, label: formatTimeTick(t, format)});
-      }
-      if (out.length <= 2) {
-        return evenlySpacedTimeTicks(minT, maxT, 4, format);
-      }
-      return out;
-    }
-    function dayTimeTicks(minT, maxT) {
-      const out = [];
-      const dayMs = 24 * 60 * 60 * 1000;
-      const startDate = new Date(minT);
-      const start = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 1).getTime();
-      for (let t = start; t <= maxT + 1; t += dayMs) {
-        out.push({t, label: formatTimeTick(t, "day")});
-      }
-      if (!out.length) out.push(...evenlySpacedTimeTicks(minT, maxT, 4, "day"));
-      return out;
-    }
-    function evenlySpacedTimeTicks(minT, maxT, divisions, format) {
-      const out = [];
-      const count = Math.max(1, divisions);
-      for (let i = 0; i <= count; i++) {
-        const t = minT + ((maxT - minT) * i / count);
-        out.push({t, label: formatTimeTick(t, format)});
-      }
-      return out;
-    }
-    function formatTimeTick(t, format) {
-      const date = new Date(t);
-      if (format === "day") {
-        return date.toLocaleDateString(undefined, {weekday: "short"});
-      }
-      if (format === "date") {
-        return date.toLocaleDateString(undefined, {month: "short", day: "numeric"});
-      }
-      return date.toLocaleTimeString(undefined, {hour: "2-digit", minute: "2-digit"});
     }
     window.redrawProducerTrend();
   </script>

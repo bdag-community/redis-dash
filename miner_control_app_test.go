@@ -55,6 +55,31 @@ func TestMinerControlViewDisabledByDefault(t *testing.T) {
 	}
 }
 
+func TestMinerControlKeepsConfiguredPoolPasswordServerSide(t *testing.T) {
+	const secret = "test-pool-password-sentinel"
+	t.Setenv("BDAG_MINER_POOL_PASSWORD", secret)
+	fake := &fakeMinerController{}
+	app := &App{
+		templates: parseTemplates(), minerController: fake, minerControlEnabled: true, minerControlToken: "token",
+		statusDataProvider: func(context.Context) (map[string]any, error) {
+			return map[string]any{"miner_health": map[string]any{"miners": []any{map[string]any{"ip": "192.168.1.100", "mac": "28:e2:97:4c:e4:0a", "status": "connected"}}}}, nil
+		},
+	}
+	w := httptest.NewRecorder()
+	app.handleTab(w, httptest.NewRequest(http.MethodGet, "/tabs/pool-management", nil))
+	if strings.Contains(w.Body.String(), secret) {
+		t.Fatal("configured pool password was rendered into dashboard HTML")
+	}
+	form := url.Values{"target": {"192.168.1.100|28:e2:97:4c:e4:0a"}, "control_token": {"token"}, "admin_password": {"admin"}, "pool_url": {"stratum+tcp://pool:3334"}, "worker_user": {"0xabcdef"}}
+	r := httptest.NewRequest(http.MethodPost, "/actions/miner-control/configure", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	app.handleMinerConfigure(w, r)
+	if fake.config.PoolPassword != secret || strings.Contains(w.Body.String(), secret) {
+		t.Fatal("configured pool password was not used privately")
+	}
+}
+
 func TestMinerControlViewUsesRedisStatusProviderWhenCollectorUnavailable(t *testing.T) {
 	app := &App{
 		api:       newAPIClient("http://collector.invalid", nil),

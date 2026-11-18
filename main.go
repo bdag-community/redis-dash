@@ -35,6 +35,7 @@ const (
 var displayLocation = time.Local
 
 var ansiEscapeRE = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
+var communityReleaseVersionRE = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$`)
 
 type APIClient struct {
 	base     string
@@ -138,21 +139,26 @@ type chartPoint struct {
 }
 
 type MinerControlView struct {
-	Title               string
-	State               string
-	StateTone           string
-	APIError            string
-	Rows                []map[string]string
-	Evidence            []Evidence
-	Enabled             bool
-	DisabledReason      string
-	DefaultPoolURL      string
-	DefaultWorkerUser   string
-	DefaultPoolPassword string
-	ReplaceExisting     bool
+	Title             string
+	State             string
+	StateTone         string
+	APIError          string
+	Rows              []map[string]string
+	Evidence          []Evidence
+	Enabled           bool
+	DisabledReason    string
+	DefaultPoolURL    string
+	DefaultWorkerUser string
+	ReplaceExisting   bool
 }
 
 func main() {
+	if os.Getenv("BDAG_LOG_PROXY_MODE") == "1" {
+		if err := runDockerLogProxy(); err != nil {
+			log.Fatalf("dashboard log proxy: %v", err)
+		}
+		return
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -179,6 +185,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/static/bdag-community-logo.svg", serveBrandLogo)
+	mux.HandleFunc("/static/htmx-2.0.4.min.js", serveHTMX)
 	mux.HandleFunc("/", app.handleIndex)
 	mux.HandleFunc("/tabs/", app.handleTab)
 	mux.HandleFunc("/partials/global-pool-earnings", app.handleGlobalPoolEarnings)
@@ -225,6 +232,13 @@ func serveBrandLogo(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "image/svg+xml")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	_, _ = w.Write(brandLogoSVG)
+}
+
+func serveHTMX(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(htmxJS)
 }
 
 func (a *App) handleEvents(w http.ResponseWriter, r *http.Request) {
@@ -312,7 +326,7 @@ func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	view := map[string]any{
 		"Title":           "Dashboard",
-		"StackReleaseTag": stackReleaseTag(),
+		"StackReleaseTag": communityReleaseLabel(stackReleaseTag()),
 		"Tab":             a.nodeStatusOverview(r.Context()),
 	}
 	a.render(w, "index", view)
@@ -320,6 +334,21 @@ func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 func stackReleaseTag() string {
 	return first(env("BDAG_STACK_RELEASE_TAG", ""), env("BDAG_RELEASE_VERSION", ""))
+}
+
+func communityReleaseLabel(tag string) string {
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return ""
+	}
+	version := tag
+	for _, prefix := range []string{"stack-dev-", "stack-"} {
+		version = strings.TrimPrefix(version, prefix)
+	}
+	if communityReleaseVersionRE.MatchString(version) {
+		return "BDAG Community Release " + version
+	}
+	return "BDAG Community Development (" + tag + ")"
 }
 
 func (a *App) handleTab(w http.ResponseWriter, r *http.Request) {
@@ -376,17 +405,7 @@ func (a *App) logsView(ctx context.Context) LogsView {
 }
 
 func (a *App) nodeStatusOverview(ctx context.Context) TabView {
-	node := a.nodeStatusLogStatus(ctx)
-	pool := a.poolLogStatus(ctx)
-	return TabView{
-		Title:        "Node Status",
-		State:        node.State,
-		StateTone:    node.Tone,
-		RefreshEvery: "3s",
-		Node:         node,
-		Evidence:     pool.Evidence,
-		Groups:       pool.Groups,
-	}
+	return a.poolStatus(ctx)
 }
 
 func (a *App) handleMinerConfigure(w http.ResponseWriter, r *http.Request) {
@@ -411,7 +430,7 @@ func (a *App) handleMinerConfigure(w http.ResponseWriter, r *http.Request) {
 		AdminPassword:   r.FormValue("admin_password"),
 		PoolURL:         r.FormValue("pool_url"),
 		WorkerUser:      r.FormValue("worker_user"),
-		PoolPassword:    r.FormValue("pool_password"),
+		PoolPassword:    first(r.FormValue("pool_password"), env("BDAG_MINER_POOL_PASSWORD", ""), "1234"),
 		ReplaceExisting: !formFalse(r.PostForm, "replace_existing"),
 	})
 	if err != nil {
@@ -504,7 +523,8 @@ func (a *App) handleLiveStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleLiveNodeStatus(w http.ResponseWriter, r *http.Request) {
-	a.renderJSON(w, a.nodeStatusOverview(r.Context()))
+	node := a.nodeStatusLogStatus(r.Context())
+	a.renderJSON(w, TabView{Title: "Node Status", State: node.State, StateTone: node.Tone, RefreshEvery: "3s", Node: node})
 }
 
 func (a *App) handleLivePeers(w http.ResponseWriter, r *http.Request) {
@@ -688,13 +708,12 @@ type LogsView struct {
 func (a *App) minerControlView(ctx context.Context) MinerControlView {
 	data, err := a.statusData(ctx)
 	view := MinerControlView{
-		Title:               "Pool Management",
-		State:               "Disabled",
-		StateTone:           "neutral",
-		Enabled:             a.minerControlEnabled,
-		DisabledReason:      a.minerControlDisabled,
-		DefaultPoolPassword: first(env("BDAG_MINER_POOL_PASSWORD", ""), "1234"),
-		ReplaceExisting:     true,
+		Title:           "Pool Management",
+		State:           "Disabled",
+		StateTone:       "neutral",
+		Enabled:         a.minerControlEnabled,
+		DisabledReason:  a.minerControlDisabled,
+		ReplaceExisting: true,
 	}
 	if err != nil {
 		view.State = "API Unavailable"
@@ -745,6 +764,7 @@ func (a *App) poolStatus(ctx context.Context) TabView {
 	}
 
 	view.Title = "Pool Status"
+	view.Node = liveNodeStatus(data)
 
 	liveSource := stringValue(data, "source") == "redis-live"
 	waitingLabel := "Waiting for Collector"

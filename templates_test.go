@@ -341,7 +341,6 @@ func TestMinerControlTemplateRendersSeparateActionSurface(t *testing.T) {
 		Enabled:             true,
 		DefaultPoolURL:      "stratum+tcp://192.168.1.10:3334",
 		DefaultWorkerUser:   "0xabcdef",
-		DefaultPoolPassword: "1234",
 		ReplaceExisting:     true,
 		Rows: []map[string]string{
 			{
@@ -372,7 +371,7 @@ func TestIndexUsesSSEPipelineWithoutBrowserPolling(t *testing.T) {
 	templates := parseTemplates()
 	view := map[string]any{
 		"Title":           "Dashboard",
-		"StackReleaseTag": "pool-vtest",
+		"StackReleaseTag": "BDAG Community Release v3.0.0-rc.1",
 		"Tab": TabView{
 			Title:       "Pool Status",
 			StatusSteps: []StatusStep{{Label: "Mining", Active: true}},
@@ -437,7 +436,7 @@ func TestIndexUsesDashboardSidebarShell(t *testing.T) {
 	templates := parseTemplates()
 	view := map[string]any{
 		"Title":           "Dashboard",
-		"StackReleaseTag": "pool-vtest",
+		"StackReleaseTag": "BDAG Community Release v3.0.0-rc.1",
 		"Tab": TabView{
 			Title:       "Pool Status",
 			StatusSteps: []StatusStep{{Label: "Mining", Active: true}},
@@ -458,7 +457,7 @@ func TestIndexUsesDashboardSidebarShell(t *testing.T) {
 		`class="sidebar"`,
 		`class="content-shell"`,
 		`Mining Operations Dashboard`,
-		`Release pool-vtest`,
+		`BDAG Community Release v3.0.0-rc.1`,
 		`hx-get="/tabs/overview"`,
 		`hx-get="/tabs/warnings"`,
 		`hx-get="/tabs/asic-fleet"`,
@@ -502,13 +501,12 @@ func TestLiveTabDOMContractPreservesRefreshAnchors(t *testing.T) {
 
 	cases := map[string][]string{
 		"overview": {
-			`id="tab-content" data-live-tab="overview"`,
-			`class="overview-heading">Node Status`,
-			`id="node-status-groups"`,
-			`Native Sync`,
-			`class="overview-heading">Pool Status`,
-			`id="pool-status-groups"`,
-			`Health`,
+			`id="tab-content" data-live-tab="status"`,
+			`data-live-steps="node"`,
+			`data-live-steps="status"`,
+			`data-live-evidence="node"`,
+			`id="overview-warnings"`,
+			`asic-performance-rows`,
 		},
 		"pool-earnings": {
 			`id="tab-content" data-live-tab="pool-earnings"`,
@@ -555,27 +553,6 @@ func TestLiveTabDOMContractPreservesRefreshAnchors(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestOverviewDoesNotRenderASICPerformance(t *testing.T) {
-	templates := parseTemplates()
-	view := TabView{
-		Title:       "Pool Status",
-		Node:        StatusPanel{Title: "Node Status"},
-		StatusSteps: []StatusStep{{Label: "Mining", Active: true}},
-		Evidence:    sampleEvidence(),
-	}
-
-	var buf bytes.Buffer
-	if err := templates.ExecuteTemplate(&buf, "overview", view); err != nil {
-		t.Fatalf("render overview: %v", err)
-	}
-	html := buf.String()
-	for _, forbidden := range []string{"ASIC Performance", "asicPerformanceData", "asicPerformanceChart", "asicPerformanceLegend", "asic-performance-rows"} {
-		if strings.Contains(html, forbidden) {
-			t.Fatalf("overview should not render ASIC performance marker %q: %s", forbidden, html)
-		}
 	}
 }
 
@@ -664,7 +641,6 @@ func TestPoolManagementAndLogsRemainNonLiveTabs(t *testing.T) {
 		StateTone:           "neutral",
 		DefaultPoolURL:      "stratum+tcp://192.168.1.10:3334",
 		DefaultWorkerUser:   "0xabcdef",
-		DefaultPoolPassword: "1234",
 		Rows: []map[string]string{{
 			"target": "192.168.1.100|28:e2:97:4c:e4:0a",
 			"label":  "28:E2:97:4C:E4:0A",

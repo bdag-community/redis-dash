@@ -37,20 +37,20 @@ The primary node height shown by the dashboard, sourced from native BlockDAG cha
 _Avoid_: EVM height, template height
 
 **Node Status Log Event**:
-The structured `node_status_log` JSON event emitted in node logs with schema `bdag.nodeworker.status_log.v1`. It is the source for the Node Status card grid, including separate `native_sync` and `evm_sync` status, current block, target block, peer freshness, P2P current state, remaining blocks, remaining EVM state work, and ETA fields.
-_Avoid_: Reconstructed node status, inferred node readiness, collector-derived node banner
+The structured `node_status_log` JSON event emitted in node logs with schema `bdag.nodeworker.status_log.v1`. It is retained for explicit log diagnostics; the Overview uses the shared live status sample so service-based and container-based nodes work alike.
+_Avoid_: Treating missing log events as a stopped node
 
 **Node Status Card Grid**:
-The simple Overview presentation of the latest Node Status Log Event as read-only cards. It does not infer mining readiness, pool readiness, or miner health.
-_Avoid_: Readiness ladder, miner table headline, synthetic node status
+The Overview presentation of native and EVM sync evidence from the shared live status sample. Node sync and pool submit readiness remain distinct.
+_Avoid_: Treating synced as mining ready or presenting missing evidence as healthy
 
 **Pool Status Log Event**:
-The structured `pool_status` JSON event emitted in pool logs with schema `bdag.pool.status.v1`. It is the source for the Overview pool status cards, including connection counts, template job state, accepted job counters, recovery windows, submit stall state, and template conversion stall state.
-_Avoid_: Reconstructed pool status, inferred collector status, hidden pool runtime state
+The structured `pool_status` JSON event emitted in pool logs with schema `bdag.pool.status.v1`. It is retained for explicit log diagnostics; the Overview uses the shared live pool and job-state sample.
+_Avoid_: Treating missing log events as a stopped pool
 
 **Pool Status Card Groups**:
-The Pool Status tab presentation of the latest Pool Status Log Event as read-only card groups.
-_Avoid_: Synthetic readiness ladder, miner-control state, hidden nested runtime fields
+The Overview presentation of live pool readiness and ASIC performance, based on the same cached sample as the status API.
+_Avoid_: Treating a synced node alone as proof that mining is ready
 
 **Status Evidence Rows**:
 The default Status evidence set for readiness facts such as Accepting Shares, Work Fresh, Submit Ready, Paid Mining Healthy, and supporting pool evidence.
