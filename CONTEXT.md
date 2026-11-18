@@ -182,6 +182,14 @@ _Avoid_: 24-hour default earnings
 The tab for network-wide production context, including global chain production, top producers, local pool share, and global trends.
 _Avoid_: Local earnings
 
+**Pool Hashpower**:
+The Global tab's sum of fresh, unique ASIC-reported rates for devices whose
+active endpoint matches the local pool. The display calls this the total only
+when fresh job-state evidence covers every running configured pool and every
+connected lane maps to a measured ASIC; otherwise it labels the sum observed.
+It is not network hashpower or a share-based accounting value.
+_Avoid_: Network hashpower, share-based accounting value
+
 **Global Production Snapshot**:
 A read-only projection of network producer evidence used by Network Production Health, Producer Trend, Local Pool Highlight, and Estimated Pool Earnings Table. It preserves the Dashboard API Contract as truth while allowing Redis live evidence to provide bounded best-effort context.
 _Avoid_: Duplicate global truth engine, pool earnings source, unbounded producer payload

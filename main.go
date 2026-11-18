@@ -1589,12 +1589,14 @@ func (a *App) global(ctx context.Context) TabView {
 
 func (a *App) globalWithRange(ctx context.Context, rangeToken string, includeChart bool) TabView {
 	data, err := a.globalData(ctx)
+	statusData, statusErr := a.statusData(ctx)
+	poolRate := poolHashpower(statusData, localPoolHashpowerURL(statusData))
 	view := baseTab("Global", "5s", data, err)
 	if data == nil && err == nil {
 		view.State = "Loading"
 		view.StateTone = "neutral"
 		view.RefreshEvery = "5s"
-		view.Evidence = []Evidence{{"Global", "Loading"}}
+		view.Evidence = []Evidence{{"Global", "Loading"}, {"Pool Hashpower", poolRate}}
 		view.ChartJSON = template.JS("[]")
 		return view
 	}
@@ -1602,10 +1604,10 @@ func (a *App) globalWithRange(ctx context.Context, rangeToken string, includeCha
 		view.State = "API Unavailable"
 		view.StateTone = "down"
 		view.RefreshEvery = "5s"
+		view.Evidence = []Evidence{{"Pool Hashpower", poolRate}}
 		view.ChartJSON = template.JS("[]")
 		return view
 	}
-	statusData, statusErr := a.statusData(ctx)
 	earningsData, earningsErr := a.poolEarningsData(ctx)
 	price := mapValue(earningsData, "price")
 	priceOK := mapString(price, "status") == "ok" && mapString(price, "usd") != ""
@@ -1615,6 +1617,7 @@ func (a *App) globalWithRange(ctx context.Context, rangeToken string, includeCha
 	}
 	view.Evidence = []Evidence{
 		{"Current Price USD", priceQuote(usdPrice, "$")},
+		{"Pool Hashpower", poolRate},
 		{"Chain Block Count", first(nestedString(statusData, "sync_progress", "chain_block_count"), stringValue(statusData, "chain_block_count"), nestedString(statusData, "nodes", "node", "chain_block_count"))},
 		{"Main Order", first(nestedString(statusData, "sync_progress", "chain_main_height"), nestedString(statusData, "sync_progress", "main_order"), nestedString(statusData, "nodes", "node", "best_main_order"))},
 		{"EVM Block", first(nestedString(statusData, "sync_progress", "current_block"), nestedString(statusData, "nodes", "node", "latest_block"), nestedString(statusData, "wallet", "block_number"))},
