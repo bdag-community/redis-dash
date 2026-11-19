@@ -723,7 +723,9 @@ func (a *App) minerControlView(ctx context.Context) MinerControlView {
 	}
 	view.Rows = minerControlRows(data)
 	view.DefaultPoolURL = minerPoolURLFromStatus(data)
-	view.DefaultWorkerUser = first(stringValue(data, "mining_address"), nestedString(data, "pool_health", "configured_worker_user"), env("MINING_POOL_ADDRESS", ""))
+	// A pool coinbase belongs to the operator and is not a miner's worker
+	// identity. Only an explicit worker default may populate this control.
+	view.DefaultWorkerUser = env("BDAG_DEFAULT_WORKER_USER", "")
 	view.Evidence = []Evidence{
 		{"Known Control Targets", strconv.Itoa(len(view.Rows))},
 		{"Default Pool URL", view.DefaultPoolURL},

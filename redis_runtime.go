@@ -1823,7 +1823,9 @@ func (r *DashboardRuntime) statusPayload(ctx context.Context) (map[string]any, e
 	}
 	if miningAddress := env("MINING_POOL_ADDRESS", ""); miningAddress != "" {
 		payload["mining_address"] = miningAddress
-		payload["pool_health"].(map[string]any)["configured_worker_user"] = miningAddress
+	}
+	if worker := env("BDAG_DEFAULT_WORKER_USER", ""); worker != "" {
+		payload["pool_health"].(map[string]any)["configured_worker_user"] = worker
 	}
 	if chain != nil {
 		syncProgress := payload["sync_progress"].(map[string]any)
@@ -1953,6 +1955,9 @@ func (r *DashboardRuntime) statusPayload(ctx context.Context) (map[string]any, e
 				payload["miner_health"] = minerHealth
 			}
 		}
+	}
+	if minerHealth, ok := payload["miner_health"].(map[string]any); ok {
+		applyFreshPoolJobCounts(minerHealth, poolJobState)
 	}
 	runtimeWarnings := appendUniqueStrings(nil, watchdogStatusWarnings()...)
 	if minerHealth, ok := payload["miner_health"].(map[string]any); ok {
@@ -2309,7 +2314,6 @@ func minerHealthFromASICEvents(events []map[string]any) map[string]any {
 			"health":              status,
 			"connected":           connected,
 			"configured_pool_url": first(env("BDAG_POOL_URL", ""), env("MINER_POOL_URL", "")),
-			"intended_wallet":     env("MINING_POOL_ADDRESS", ""),
 			"last_seen_at":        mapString(event, "updated_at"),
 			"source":              first(mapString(event, "source"), "redis-asic-status"),
 		}
@@ -2510,6 +2514,7 @@ func derivedASICLane(row map[string]any, client map[string]any, clientByIP map[s
 		"protocol_variant":           first(mapString(client, "protocol_variant"), "stratum-v1-basic"),
 		"extranonce_subscribed":      truthyValue(client["extranonce_subscribed"]),
 		"pdiff":                      mapString(client, "pdiff"),
+		"intended_wallet":            authenticatedWorker(client),
 		"accepted":                   accepted,
 		"rejected_30m":               rejected,
 		"rejected_local_30m":         firstNumber(client, "low_diff_rejects"),
@@ -2569,7 +2574,6 @@ func asicPerformanceMinerRow(lane map[string]any) map[string]any {
 		"health":               first(mapString(lane, "health"), "not_connected"),
 		"connected":            truthyValue(lane["ready"]),
 		"configured_pool_url":  first(env("BDAG_POOL_URL", ""), env("MINER_POOL_URL", "")),
-		"intended_wallet":      env("MINING_POOL_ADDRESS", ""),
 		"source":               "pool-asic-performance",
 		"lane_id":              laneID,
 		"lane_identity_source": mapString(lane, "lane_identity_source"),
@@ -2599,6 +2603,9 @@ func mergeASICPerformanceFields(row map[string]any, lane map[string]any) {
 	row["extranonce_subscribed"] = truthyValue(lane["extranonce_subscribed"])
 	row["current_job_age_ms"] = mapString(lane, "current_job_age_ms")
 	row["pdiff"] = mapString(lane, "pdiff")
+	if worker := mapString(lane, "intended_wallet"); worker != "" {
+		row["intended_wallet"] = worker
+	}
 	row["blocks_30m"] = mapString(lane, "blocks_30m")
 	row["blocks_1h"] = mapString(lane, "blocks_1h")
 	row["blocks_6h"] = mapString(lane, "blocks_6h")
@@ -2607,6 +2614,27 @@ func mergeASICPerformanceFields(row map[string]any, lane map[string]any) {
 	row["rejected_local_30m"] = mapString(lane, "rejected_local_30m")
 	row["last_block_at_epoch_ms"] = mapString(lane, "last_accepted_unix_ms")
 	row["last_event_at_epoch_ms"] = mapString(lane, "last_event_unix_ms")
+}
+
+func authenticatedWorker(client map[string]any) string {
+	if !truthyValue(client["authorized"]) {
+		return ""
+	}
+	return mapString(client, "authorized_worker")
+}
+
+func applyFreshPoolJobCounts(minerHealth, jobState map[string]any) {
+	if minerHealth == nil || jobState == nil {
+		return
+	}
+	age, ageOK := parseNumber(mapString(jobState, "age_seconds"))
+	count, countOK := parseNumber(mapString(jobState, "physical_miners"))
+	if !ageOK || age < 0 || age > 15 || !countOK || count < 0 {
+		return
+	}
+	minerHealth["connected_count"] = int(count)
+	minerHealth["connected_count_effective"] = int(count)
+	minerHealth["connected_count_source"] = "pool-job-state"
 }
 
 func mergeASICTelemetryIntoMinerHealth(minerHealth map[string]any, telemetry map[string]any) {

@@ -784,6 +784,37 @@ func TestMinerHealthFromASICEventsBuildsManagedRows(t *testing.T) {
 	}
 }
 
+func TestASICWalletUsesOnlyAuthenticatedWorker(t *testing.T) {
+	t.Setenv("MINING_POOL_ADDRESS", "0xoperator")
+	health := minerHealthFromASICEvents([]map[string]any{{"mac": "28:e2:97:4d:44:3a", "ip": "192.168.1.105"}})
+	row := health["managed_miners"].([]map[string]any)[0]
+	if got := mapString(row, "intended_wallet"); got != "" {
+		t.Fatalf("invented owner from operator coinbase: %q", got)
+	}
+	client := map[string]any{"asic_mac": "28:e2:97:4d:44:3a", "authorized": true, "authorized_worker": "0xowner"}
+	lane := derivedASICLane(row, client, nil, time.Now())
+	mergeASICPerformanceFields(row, lane)
+	if got := mapString(row, "intended_wallet"); got != "0xowner" {
+		t.Fatalf("authenticated owner = %q, want 0xowner", got)
+	}
+	client["authorized"] = false
+	if got := mapString(derivedASICLane(nil, client, nil, time.Now()), "intended_wallet"); got != "" {
+		t.Fatalf("unauthenticated owner = %q, want empty", got)
+	}
+}
+
+func TestPoolJobCountsUseFreshPhysicalConnections(t *testing.T) {
+	health := map[string]any{"connected_count": 3}
+	applyFreshPoolJobCounts(health, map[string]any{"age_seconds": 0, "physical_miners": 1})
+	if health["connected_count"] != 1 || health["connected_count_effective"] != 1 {
+		t.Fatalf("fresh physical connections not applied: %#v", health)
+	}
+	applyFreshPoolJobCounts(health, map[string]any{"age_seconds": 20, "physical_miners": 3})
+	if health["connected_count"] != 1 {
+		t.Fatalf("stale pool state changed connections: %#v", health)
+	}
+}
+
 func TestMinerHealthFromASICEventsFiltersToAllowlistedASICs(t *testing.T) {
 	t.Setenv("POOL_ASIC_MAC_ALLOWLIST", "28:e2:97:4d:44:3a")
 

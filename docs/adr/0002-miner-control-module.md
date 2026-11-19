@@ -26,6 +26,9 @@ Miner control is disabled by default. Enabling it requires:
 
 - `BDAG_MINER_CONTROL_ENABLED=1`
 - `BDAG_MINER_CONTROL_TOKEN`
+- `BDAG_DEFAULT_WORKER_USER` optionally supplies an explicit worker or wallet
+  for the form. Without it the field is empty; the pool operator's coinbase
+  address is not assumed to be an ASIC owner's address.
 
 Each action validates that the target is a known miner from the Dashboard API Contract before crossing into the control module. The adapter refuses public, loopback, multicast, unspecified, and Docker bridge-range targets by default, and it can be constrained further with `BDAG_ASIC_LAN_CIDRS`.
 

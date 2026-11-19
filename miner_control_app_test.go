@@ -116,6 +116,21 @@ func TestMinerControlViewUsesRedisStatusProviderWhenCollectorUnavailable(t *test
 	}
 }
 
+func TestMinerControlNeverDefaultsWorkerToPoolCoinbase(t *testing.T) {
+	t.Setenv("MINING_POOL_ADDRESS", "0xoperator")
+	t.Setenv("BDAG_DEFAULT_WORKER_USER", "")
+	app := &App{statusDataProvider: func(context.Context) (map[string]any, error) {
+		return map[string]any{"mining_address": "0xoperator", "pool_health": map[string]any{"configured_worker_user": "0xoperator"}}, nil
+	}}
+	if got := app.minerControlView(context.Background()).DefaultWorkerUser; got != "" {
+		t.Fatalf("unconfigured worker default = %q, want empty", got)
+	}
+	t.Setenv("BDAG_DEFAULT_WORKER_USER", "0xowner")
+	if got := app.minerControlView(context.Background()).DefaultWorkerUser; got != "0xowner" {
+		t.Fatalf("explicit worker default = %q, want 0xowner", got)
+	}
+}
+
 func TestHandleMinerConfigureRequiresTokenAndKnownMiner(t *testing.T) {
 	fake := &fakeMinerController{}
 	app := &App{
